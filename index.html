@@ -997,6 +997,13 @@ let filter = 'ALL';
 let tOffset = 0;
 let playing = false;
 const RATE = 60;              // 1 second of watching = 1 minute of sky
+/* The callout's preview runs at RATE. A pass opened from the table runs at half
+   that: it starts at the rise rather than near the peak, so there is a whole
+   pass to watch rather than the last moments of one, and it needs room to
+   breathe. Kept as a variable rather than a second constant so the two buttons
+   cannot drift apart. */
+let playRate = RATE;
+let focusSat = null;          // name of the spacecraft the viewer asked to follow
 const MAX_AHEAD = 840*60000;  // 14 h, matching the pass search window
 /* simNow follows the scrubber, so it drives anything that depicts the sky: the
    dome, the clock, the preview. It must NOT drive the pass schedule. Scrubbing
@@ -1906,7 +1913,7 @@ function drawLive(){
      guarantees the satellite you clicked is drawn — passes are computed from that
      same sample. */
   const live = tOffset === 0;
-  let drawn = 0;
+  let drawn = 0, focusSeen = false;
   /* Explore draws the roster sample, as it did originally. The sample already
      contains every satellite from every small operator, so nothing is ever
      crowded out — selecting from the full fleet only changed which Starlinks
@@ -2002,6 +2009,22 @@ function drawLive(){
       head = Math.atan2(ay-y0, ax-x0) * 180/Math.PI;
     }
 
+    /* The spacecraft the viewer asked to follow. Drawn beneath the glyph so the
+       shape stays readable, and breathing slowly so it reads as attention rather
+       than as an alert. */
+    if(focusSat && s.name === focusSat){
+      focusSeen = true;
+      const halo = el('circle', { cx:x.toFixed(1), cy:y.toFixed(1), r:21,
+        fill:'rgba(120,214,255,.13)', stroke:'#78D6FF', 'stroke-width':1.3,
+        opacity:.85 });
+      halo.innerHTML =
+        '<animate attributeName="r" values="19;24;19" dur="2.6s" repeatCount="indefinite"/>' +
+        '<animate attributeName="opacity" values=".9;.45;.9" dur="2.6s" repeatCount="indefinite"/>';
+      liveLayer.appendChild(halo);
+      liveLayer.appendChild(el('circle', { cx:x.toFixed(1), cy:y.toFixed(1), r:30,
+        fill:'none', stroke:'#78D6FF', 'stroke-width':0.7, opacity:.28 }));
+    }
+
     const spin = s.cls === 'rocketbody' ? (now.getTime()/24 + (s.phase||0)*57) % 360 : 0;
     drawCraft(liveLayer, x, y, head, tint, lit, l.el, s.cls, spin);
     /* A transparent disc over each craft. The glyphs are a few pixels of actual
@@ -2024,6 +2047,10 @@ function drawLive(){
   if(!dense && densePool.length && densePool[0].style.display !== 'none'){
     densePool.forEach(c => c.style.display = 'none');
   }
+
+  /* Once it has set, there is nothing to follow. Drop the aura and let the clock
+     carry on at its own pace rather than leaving a marker on empty sky. */
+  if(focusSat && !focusSeen) clearFocus();
 
   const d = $('#drawn');
   /* Only quote a denominator in All, where it is a real fact about the fleet.
@@ -2180,9 +2207,11 @@ function renderPasses(){
       const w = td.querySelector('.dwatch');
       if(w) w.onclick = e => {
         e.stopPropagation();
-        const shell = document.querySelector('.dome-shell');
-        if(shell) shell.scrollIntoView({behavior:'smooth', block:'center'});
-        previewPass(p.peak.getTime());
+        /* All the way up, not merely into view. This pass runs from the rise at
+           half speed, so the viewer is settling in to watch rather than glancing
+           — give them the whole sky. */
+        window.scrollTo({top:0, behavior:'smooth'});
+        previewPass(p.start.getTime(), {rate:RATE/2, lead:8000, focus:p.sat.name});
       };
     }
   }
@@ -2205,9 +2234,11 @@ function renderPasses(){
       const w = td.querySelector('.dwatch');
       if(w) w.onclick = e => {
         e.stopPropagation();
-        const shell = document.querySelector('.dome-shell');
-        if(shell) shell.scrollIntoView({behavior:'smooth', block:'center'});
-        previewPass(p.peak.getTime());
+        /* All the way up, not merely into view. This pass runs from the rise at
+           half speed, so the viewer is settling in to watch rather than glancing
+           — give them the whole sky. */
+        window.scrollTo({top:0, behavior:'smooth'});
+        previewPass(p.start.getTime(), {rate:RATE/2, lead:8000, focus:p.sat.name});
       };
     }
   }
@@ -2349,7 +2380,7 @@ function renderFilters(){
     txt.textContent = lbl + (ready ? ' (' + n + ')' : '');
     b.appendChild(txt);
     b.setAttribute('aria-pressed', String(filter===val));
-    b.onclick = ()=>{ filter=val; passesShown = PASS_PREVIEW; renderFilters(); drawLive(); renderPasses(); renderCallout(); };
+    b.onclick = ()=>{ clearFocus(); filter=val; passesShown = PASS_PREVIEW; renderFilters(); drawLive(); renderPasses(); renderCallout(); };
     wrap.appendChild(b);
   });
 }
@@ -2502,8 +2533,8 @@ function setSkyMode(mode){
   b.textContent = 'View all';
   renderFilters(); drawLive();
 }
-$('#modesample').onclick = ()=> setSkyMode('sample');
-$('#modeall').onclick    = ()=> setSkyMode('all');
+$('#modesample').onclick = ()=>{ clearFocus(); setSkyMode('sample'); };
+$('#modeall').onclick    = ()=>{ clearFocus(); setSkyMode('all'); };
 
 /* Both halves are derived — one from the look-ahead window, one from the feed's
    own timestamp — so neither can drift out of step with the workflow schedule.
@@ -2575,8 +2606,18 @@ function syncScrub(){
   $('#scrub').value = Math.round(tOffset/60000);
   $('#tlabel').innerHTML = offsetPhrase();
 }
+/* The aura is a temporary state, not a selection. It goes when the spacecraft
+   sets, and it goes the moment the viewer does anything else — pressing play,
+   scrubbing, changing filter or sky mode. Left on, it would sit there marking a
+   pass nobody is watching any more. */
+function clearFocus(){
+  if(focusSat === null && playRate === RATE) return;
+  focusSat = null; playRate = RATE;
+}
+
 function setPlaying(on){
   playing = on;
+  if(!on) clearFocus();
   const b = $('#playbtn');
   b.innerHTML = on ? PAUSE_GLYPH : PLAY_GLYPH;
   b.dataset.playing = on ? '1' : '0';
@@ -2584,10 +2625,12 @@ function setPlaying(on){
 }
 setPlaying(false);   // paint the initial glyph; markup ships empty by design
 $('#playbtn').onclick = ()=>{
+  clearFocus();
   if(!playing && tOffset >= MAX_AHEAD) tOffset = 0;
   setPlaying(!playing);
 };
 $('#scrub').oninput = e=>{
+  clearFocus();
   setPlaying(false);
   tOffset = Number(e.target.value)*60000;
   syncScrub(); tickClock(); drawLive(); renderPasses(); renderCallout();
@@ -2595,11 +2638,15 @@ $('#scrub').oninput = e=>{
 $('#tlabel').onclick = ()=>{ setPlaying(false); tOffset = 0; syncScrub(); tickClock(); drawLive(); renderPasses(); renderCallout(); };
 
 /* Jump to a pass and watch it cross, rather than reading a time off a table. */
-window.previewPass = function(peakMs){
+window.previewPass = function(atMs, opts){
   /* Aim just short of the peak. Starting 45s before the rise meant watching it
      climb from the horizon first — about four seconds of nothing much before the
-     part worth seeing. */
-  tOffset = Math.max(0, peakMs - Date.now() - 40000);
+     part worth seeing. A pass opened from the table passes its own lead-in and
+     rate instead, because there the viewer chose that pass deliberately. */
+  const o = opts || {};
+  playRate = o.rate || RATE;
+  focusSat = o.focus || null;
+  tOffset = Math.max(0, atMs - Date.now() - (o.lead == null ? 40000 : o.lead));
   syncScrub(); tickClock(); setPlaying(true); drawLive();
   // The selection is stale the moment time shifts; drop it so the sample takes
   // over cleanly and nothing pops out mid-animation.
@@ -2632,7 +2679,7 @@ async function boot(){
   function frame(ts){
     const dt = ts - last; last = ts;
     if(playing){
-      tOffset = Math.min(MAX_AHEAD, tOffset + dt*(RATE-1));
+      tOffset = Math.min(MAX_AHEAD, tOffset + dt*(playRate-1));
       if(tOffset >= MAX_AHEAD) setPlaying(false);
       acc += dt;
       if(acc > 50){ acc = 0; syncScrub(); drawLive(); tickClock(); }
