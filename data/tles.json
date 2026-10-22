@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-21T14:30:05.799Z",
+ "generated": "2026-10-22T14:31:03.910Z",
  "source": "CelesTrak GP active catalog (celestrak.org), fetched daily",
  "demo": false,
  "report": [
@@ -87,12 +87,12 @@
  "fleet": {
   "count": 10942,
   "dated": 10942,
-  "combinedSpeedKmS": 83449.75713763965,
-  "distanceKm": 5946169888108.147,
-  "asOf": "2026-10-21T14:30:05.775Z",
-  "catalogPayloads": 16762,
-  "catalogTotal": 16766,
-  "sharePct": 65.2786063715547,
+  "combinedSpeedKmS": 83449.76871260376,
+  "distanceKm": 5953386370917.656,
+  "asOf": "2026-10-22T14:31:03.882Z",
+  "catalogPayloads": 16761,
+  "catalogTotal": 16765,
+  "sharePct": 65.28250104409045,
   "byOperator": {
    "Starfish Space": 3,
    "Starcloud": 1,
